@@ -33,7 +33,7 @@ source .venv/bin/activate       # Linux / WSL
 ```
 
 
-#### 2. Install dependencies:
+#### 3. Install dependencies:
 ```
 pip install -r requirements.txt
 ```
@@ -48,30 +48,19 @@ pip install -r requirements.txt
 python app.py
 ```
 
-#### This will run a small TTS example and generate ``outputs/name.wav.``
+#### This will install ``model_last.pt`` and ``config.json``
+- run locally the generated web link
 ## Local Usage
-#### Command-Line
+### Gradio web UI
 ```
-python f5_tts/infer/infer_cli.py --text "Xin chào các bạn!" --output outputs/hello.wav
+python app.py
 ```
-
-``--text``: Text to synthesize
-
-``--output``: Path to save generated audio
-
-#### Gradio API Server
+#### FastAPI Server
 ```
 python server.py
 ```
-
-
-Open ``http://127.0.0.1:7860`` in your browser.
-
-Paste text and generate speech via the web interface.
-
-
 ## Credits
 
-Project based on [F5-TTS-Vietnamese-100h](https://huggingface.co/spaces/hynt/F5-TTS-Vietnamese-100h)
+#### Project based on [F5-TTS-Vietnamese-100h](https://huggingface.co/spaces/hynt/F5-TTS-Vietnamese-100h)
 
-Core model code adapted from [SWivid/F5-TTS](https://github.com/SWivid/F5-TTS)
+#### Core model code adapted from [SWivid/F5-TTS](https://github.com/SWivid/F5-TTS)
