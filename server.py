@@ -9,6 +9,7 @@ import tempfile
 import os
 import requests
 import uuid
+import torch
 
 app = FastAPI()
 
@@ -27,7 +28,7 @@ VOCAB_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/config.json"))
 tts = F5TTS(
     ckpt_file=CKPT_FILE,
     vocab_file=VOCAB_FILE,
-    device="cuda" if os.getenv("CUDA_VISIBLE_DEVICES") else "cpu"
+    device="cuda" if torch.cuda.is_available() else "cpu"
 )
 
 def get_ngrok_url():
