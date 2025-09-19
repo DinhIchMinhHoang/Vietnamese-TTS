@@ -40,6 +40,8 @@ pip install -r requirements.txt
 
 #### ⚠️ Make sure to use Linux/WSL/Ubuntu if possible; some dependencies and audio tools may fail on plain Windows.
 
+#### ⚠️ Having GPU is recommended for fast and high quality experience.
+
 ## First Use
 
 #### Test the installation with a simple example:
@@ -53,11 +55,11 @@ python app.py
 ## Local Usage
 ### Gradio web UI
 ```
-python app.py
+python main.py --mode ui
 ```
 #### FastAPI Server
 ```
-python server.py
+python main.py --mode api
 ```
 ## Credits
 
