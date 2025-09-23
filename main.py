@@ -141,10 +141,14 @@ def launch_api():
         reference_audio: UploadFile = File(None),
         reference_text: str = Form(""),
         output_filename: str = Form(None),
+        speed: float = Form(1.0),
     ):
         try:
             if not reference_audio:
                 return {"status": "error", "message": "No reference audio provided."}
+            
+            #speed
+            speed = max(0.3, min(2.0, speed))
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                 tmp.write(await reference_audio.read())
@@ -157,7 +161,7 @@ def launch_api():
 
             output_path = os.path.join(OUTPUT_DIR, output_filename)
 
-            run_inference(ref_audio_path, reference_text, text, 1.0, output_path)
+            run_inference(ref_audio_path, reference_text, text, speed, output_path)
 
             ngrok_url = get_ngrok_url()
             file_url = f"{ngrok_url}/static/{output_filename}" if ngrok_url else f"/static/{output_filename}"

@@ -49,6 +49,7 @@ async def synthesize(
     reference_audio_path: str = Form(None),
     reference_text: str = Form(""),
     output_filename: str = Form(None),
+    speed: float = Form(1.0),
 ):
     try:
         # Case 1: File uploaded
@@ -72,13 +73,16 @@ async def synthesize(
 
         output_path = os.path.join(OUTPUT_DIR, output_filename)
 
+        # Clamp speed to [0.3, 2.0]
+        speed = max(0.3, min(2.0, speed))
+
         # Run inference
         tts.infer(
             ref_file=ref_audio_path,
             ref_text=reference_text,
             gen_text=text,
             file_wave=output_path,
-            speed=1.0,
+            speed=speed,
         )
 
         # Get public ngrok URL if available
