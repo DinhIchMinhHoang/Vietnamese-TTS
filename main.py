@@ -101,7 +101,7 @@ def launch_ui():
         """)
 
         with gr.Row():
-            ref_audio = gr.Audio(label="🔊 Sample Voice", type="filepath")
+            ref_audio = gr.Audio(label="🔊 Sample Voice", type="filepath", value="example_voice/sample.wav")
             gen_text = gr.Textbox(label="📝 Text", placeholder="Enter text...", lines=3)
 
         speed = gr.Slider(0.3, 2.0, value=1.0, step=0.1, label="⚡ Speed")
@@ -144,15 +144,17 @@ def launch_api():
         speed: float = Form(1.0),
     ):
         try:
-            if not reference_audio:
-                return {"status": "error", "message": "No reference audio provided."}
-            
+
+            # Use uploaded file or default sample
+            if reference_audio:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    tmp.write(await reference_audio.read())
+                    ref_audio_path = tmp.name
+            else:
+                ref_audio_path = "example_voice/sample.wav"
+
             #speed
             speed = max(0.3, min(2.0, speed))
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                tmp.write(await reference_audio.read())
-                ref_audio_path = tmp.name
 
             if not output_filename:
                 output_filename = f"{uuid.uuid4().hex}.wav"
