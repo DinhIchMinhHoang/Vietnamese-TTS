@@ -124,7 +124,7 @@ def launch_ui():
 
         btn_synthesize.click(infer_ui, inputs=[ref_audio, gen_text, speed], outputs=[output_audio, output_spectrogram])
 
-    demo.queue().launch(server_port=7860, share=True)
+    demo.queue().launch(server_name="0.0.0.0", server_port=7860, share=True)
 
 # ================
 # FastAPI Server
