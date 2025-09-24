@@ -5,6 +5,7 @@ import uuid
 import tempfile
 import threading
 import requests
+import glob
 
 import torch
 import uvicorn
@@ -127,56 +128,78 @@ def launch_ui():
     demo.queue().launch(server_name="0.0.0.0", server_port=7860, share=False)
 
 # ================
+# List Default Voices
+# ================
+def _list_default_voices(voices_dir: str = "default_voices"):
+    supported_exts = ("*.wav", "*.mp3", "*.flac", "*.m4a", "*.ogg")
+    files = []
+    for pattern in supported_exts:
+        files.extend(glob.glob(os.path.join(voices_dir, pattern)))
+    files = sorted(files)
+    # Map nice labels to absolute paths
+    label_to_path = {os.path.basename(path): path for path in files}
+    return list(label_to_path.keys()), label_to_path
+
+# ================
 # FastAPI Server
 # ================
-def launch_api():
-    app = FastAPI()
-    OUTPUT_DIR = "outputs"
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
+def launch_ui():
+    voice_labels, label_to_path = _list_default_voices("example_voice")
 
-    @app.post("/synthesize")
-    async def synthesize(
-        text: str = Form(...),
-        reference_audio: UploadFile = File(None),
-        reference_text: str = Form(""),
-        output_filename: str = Form(None),
-        speed: float = Form(1.0),
-    ):
-        try:
+    with gr.Blocks(theme=gr.themes.Soft()) as demo:
+        gr.Markdown("""
+        # F5-TTS: Vietnamese Text-to-Speech Synthesis.
+        Chọn giọng có sẵn hoặc tải lên mẫu giọng, sau đó nhập văn bản để tạo giọng nói tự nhiên.
+        """)
 
-            # Use uploaded file or default sample
-            if reference_audio:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                    tmp.write(await reference_audio.read())
-                    ref_audio_path = tmp.name
-            else:
-                ref_audio_path = "example_voice/sample.wav"
+        with gr.Row():
+            voice_dropdown = gr.Dropdown(
+                choices=voice_labels,
+                value=voice_labels[0] if voice_labels else None,
+                label="Chọn giọng có sẵn (default_voices)",
+                interactive=True
+            )
+            ref_audio = gr.Audio(
+                label="Hoặc tải lên mẫu giọng (tùy chọn)",
+                type="filepath"
+            )
 
-            #speed
-            speed = max(0.3, min(2.0, speed))
+        gen_text = gr.Textbox(label="Text", placeholder="Enter text...", lines=3)
+        speed = gr.Slider(0.3, 2.0, value=1.0, step=0.1, label="⚡️ Speed")
+        btn_synthesize = gr.Button("🔥 Generate Voice")
 
-            if not output_filename:
-                output_filename = f"{uuid.uuid4().hex}.wav"
-            elif not output_filename.lower().endswith(".wav"):
-                output_filename += ".wav"
+        with gr.Row():
+            output_audio = gr.Audio(label="Generated Audio", type="numpy")
+            output_spectrogram = gr.Image(label="Spectrogram")
 
-            output_path = os.path.join(OUTPUT_DIR, output_filename)
+        def infer_ui(selected_voice, ref_audio_path, gen_text, speed):
+            # Resolve reference audio path: uploaded > selected default voice
+            resolved_ref = None
+            if ref_audio_path:
+                resolved_ref = ref_audio_path
+            elif selected_voice:
+                path = label_to_path.get(selected_voice)
+                if path and os.path.exists(path):
+                    resolved_ref = path
 
-            run_inference(ref_audio_path, reference_text, text, speed, output_path)
+            if not resolved_ref:
+                raise gr.Error("Vui lòng chọn giọng có sẵn hoặc tải lên file audio mẫu.")
+            if not gen_text or not gen_text.strip():
+                raise gr.Error("Vui lòng nhập nội dung văn bản để tổng hợp giọng.")
 
-            ngrok_url = get_ngrok_url()
-            file_url = f"{ngrok_url}/static/{output_filename}" if ngrok_url else f"/static/{output_filename}"
+            sr, wave, spec = run_inference(resolved_ref, "", gen_text.strip(), speed)
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                save_spectrogram(spec, tmp.name)
+                spectrogram_path = tmp.name
+            return (sr, wave), spectrogram_path
 
-            return JSONResponse(content={
-                "status": "success",
-                "url": file_url,
-                "filename": output_filename
-            })
-        except Exception as e:
-            return {"status": "error", "message": str(e)}
+        btn_synthesize.click(
+            infer_ui,
+            inputs=[voice_dropdown, ref_audio, gen_text, speed],
+            outputs=[output_audio, output_spectrogram]
+        )
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    demo.queue().launch(server_name="0.0.0.0", server_port=7860, share=False)
 
 # ================
 # Run Both (UI + API)
