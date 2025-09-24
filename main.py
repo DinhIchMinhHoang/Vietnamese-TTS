@@ -92,42 +92,6 @@ def run_inference(ref_audio_path, ref_text, gen_text, speed=1.0, output_path=Non
     return final_sample_rate, final_wave, spectrogram
 
 # ================
-# Gradio UI
-# ================
-def launch_ui():
-    with gr.Blocks(theme=gr.themes.Soft()) as demo:
-        gr.Markdown("""
-        # 🎤 F5-TTS: Vietnamese Text-to-Speech Synthesis.
-        Upload a sample voice and enter text to generate natural speech.
-        """)
-
-        with gr.Row():
-            ref_audio = gr.Audio(label="🔊 Sample Voice", type="filepath", value="example_voice/sample.wav")
-            gen_text = gr.Textbox(label="📝 Text", placeholder="Enter text...", lines=3)
-
-        speed = gr.Slider(0.3, 2.0, value=1.0, step=0.1, label="⚡ Speed")
-        btn_synthesize = gr.Button("🔥 Generate Voice")
-
-        with gr.Row():
-            output_audio = gr.Audio(label="🎧 Generated Audio", type="numpy")
-            output_spectrogram = gr.Image(label="📊 Spectrogram")
-
-        def infer_ui(ref_audio, gen_text, speed):
-            if not ref_audio:
-                raise gr.Error("Please upload a sample audio file.")
-            if not gen_text.strip():
-                raise gr.Error("Please enter text to generate voice.")
-            sr, wave, spec = run_inference(ref_audio, "", gen_text, speed)
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                save_spectrogram(spec, tmp.name)
-                spectrogram_path = tmp.name
-            return (sr, wave), spectrogram_path
-
-        btn_synthesize.click(infer_ui, inputs=[ref_audio, gen_text, speed], outputs=[output_audio, output_spectrogram])
-
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860, share=False)
-
-# ================
 # List Default Voices
 # ================
 def _list_default_voices(voices_dir: str = "default_voices"):
@@ -141,7 +105,7 @@ def _list_default_voices(voices_dir: str = "default_voices"):
     return list(label_to_path.keys()), label_to_path
 
 # ================
-# FastAPI Server
+# Gradio UI
 # ================
 def launch_ui():
     voice_labels, label_to_path = _list_default_voices("example_voice")
