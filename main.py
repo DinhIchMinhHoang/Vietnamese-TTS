@@ -202,6 +202,58 @@ def launch_ui():
     demo.queue().launch(server_name="0.0.0.0", server_port=7860, share=False)
 
 # ================
+# FastAPI Server
+# ================
+def launch_api():
+    app = FastAPI()
+    OUTPUT_DIR = "outputs"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
+
+    @app.post("/synthesize")
+    async def synthesize(
+        text: str = Form(...),
+        reference_audio: UploadFile = File(None),
+        reference_text: str = Form(""),
+        output_filename: str = Form(None),
+        speed: float = Form(1.0),
+    ):
+        try:
+
+            # Use uploaded file or default sample
+            if reference_audio:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                    tmp.write(await reference_audio.read())
+                    ref_audio_path = tmp.name
+            else:
+                ref_audio_path = "example_voice/sample.wav"
+
+            #speed
+            speed = max(0.3, min(2.0, speed))
+
+            if not output_filename:
+                output_filename = f"{uuid.uuid4().hex}.wav"
+            elif not output_filename.lower().endswith(".wav"):
+                output_filename += ".wav"
+
+            output_path = os.path.join(OUTPUT_DIR, output_filename)
+
+            run_inference(ref_audio_path, reference_text, text, speed, output_path)
+
+            ngrok_url = get_ngrok_url()
+            file_url = f"{ngrok_url}/static/{output_filename}" if ngrok_url else f"/static/{output_filename}"
+
+            return JSONResponse(content={
+                "status": "success",
+                "url": file_url,
+                "filename": output_filename
+            })
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# ================
 # Run Both (UI + API)
 # ================
 def launch_both():
