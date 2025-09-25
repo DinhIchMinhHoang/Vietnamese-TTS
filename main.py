@@ -3,6 +3,8 @@ import argparse
 import os
 import uuid
 import tempfile
+import numpy as np
+import librosa
 import threading
 import requests
 import glob
@@ -84,6 +86,22 @@ def run_inference(ref_audio_path, ref_text, gen_text, speed=1.0, output_path=Non
         speed=speed,
     )
 
+    # These will be set by the UI, default to 0 if not present
+    pitch_shift = getattr(run_inference, '_pitch_shift', 0)
+    gain_db = getattr(run_inference, '_gain_db', 0)
+
+    # Pitch shift (in semitones)
+    if pitch_shift != 0:
+        final_wave = librosa.effects.pitch_shift(final_wave.astype(np.float32), sr=final_sample_rate, n_steps=pitch_shift)
+
+    # Gain (in dB)
+    if gain_db != 0:
+        factor = 10 ** (gain_db / 20)
+        final_wave = final_wave * factor
+
+    # Clip to [-1, 1] to avoid distortion
+    final_wave = np.clip(final_wave, -1.0, 1.0)
+
     # Save audio if path provided
     if output_path:
         import soundfile as sf
@@ -129,14 +147,18 @@ def launch_ui():
             )
 
         gen_text = gr.Textbox(label="Text", placeholder="Enter text...", lines=3)
-        speed = gr.Slider(0.3, 2.0, value=1.0, step=0.1, label="⚡️ Speed")
+
+        with gr.Row():
+            speed = gr.Slider(0.3, 2.0, value=1.0, step=0.1, label="⚡️ Speed")
+            pitch_shift = gr.Slider(-12, 12, value=0, step=1, label="🎵 Pitch Shift (semitones)")
+            gain_db = gr.Slider(-20, 20, value=0, step=1, label="🔊 Gain (dB)")
         btn_synthesize = gr.Button("🔥 Generate Voice")
 
         with gr.Row():
             output_audio = gr.Audio(label="Generated Audio", type="numpy")
             output_spectrogram = gr.Image(label="Spectrogram")
 
-        def infer_ui(selected_voice, ref_audio_path, gen_text, speed):
+        def infer_ui(selected_voice, ref_audio_path, gen_text, speed, pitch_shift_val, gain_db_val):
             # Resolve reference audio path: uploaded > selected default voice
             resolved_ref = None
             if ref_audio_path:
@@ -151,7 +173,13 @@ def launch_ui():
             if not gen_text or not gen_text.strip():
                 raise gr.Error("Vui lòng nhập nội dung văn bản để tổng hợp giọng.")
 
+            # Set attributes for pitch/gain for this call
+            run_inference._pitch_shift = pitch_shift_val
+            run_inference._gain_db = gain_db_val
             sr, wave, spec = run_inference(resolved_ref, "", gen_text.strip(), speed)
+            # Clean up after call
+            del run_inference._pitch_shift
+            del run_inference._gain_db
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 save_spectrogram(spec, tmp.name)
                 spectrogram_path = tmp.name
@@ -159,7 +187,7 @@ def launch_ui():
 
         btn_synthesize.click(
             infer_ui,
-            inputs=[voice_dropdown, ref_audio, gen_text, speed],
+            inputs=[voice_dropdown, ref_audio, gen_text, speed, pitch_shift, gain_db],
             outputs=[output_audio, output_spectrogram]
         )
 
