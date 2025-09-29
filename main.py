@@ -301,13 +301,18 @@ def launch_ui():
             outputs=[output_audio, output_spectrogram]
         )
 
-    demo.queue().launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.queue().launch(
+        server_name="0.0.0.0",
+        server_port=7860,
+        share=False,
+        root_path="/voice"
+    )
 
 # ================
 # FastAPI Server
 # ================
 def launch_api():
-    app = FastAPI()
+    app = FastAPI(root_path="/voice")
     OUTPUT_DIR = "outputs"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
