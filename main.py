@@ -14,6 +14,7 @@ import parselmouth
 import torch
 import uvicorn
 import gradio as gr
+import soundfile as sf
 from pydub import AudioSegment, effects
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
@@ -169,7 +170,6 @@ def run_inference(ref_audio_path, ref_text, gen_text, speed=1.0, output_path=Non
 
     # Save audio if path provided
     if output_path:
-        import soundfile as sf
         sf.write(output_path, final_wave, final_sample_rate)
 
     return final_sample_rate, final_wave, spectrogram
@@ -177,33 +177,42 @@ def run_inference(ref_audio_path, ref_text, gen_text, speed=1.0, output_path=Non
 # ================
 # List Default Voices
 # ================
-def _list_default_voices(voices_dir: str = "default_voices"):
-    supported_exts = ("*.wav", "*.mp3", "*.flac", "*.m4a", "*.ogg")
-    files = []
-    for pattern in supported_exts:
-        files.extend(glob.glob(os.path.join(voices_dir, pattern)))
-    files = sorted(files)
-    # Map nice labels to absolute paths
-    label_to_path = {os.path.basename(path): path for path in files}
-    return list(label_to_path.keys()), label_to_path
+def _list_default_voices(voices_dir: str = "example_voice"):
+    # Scan for character folders and their emotion files
+    supported_exts = (".wav", ".mp3", ".flac", ".m4a", ".ogg")
+    label_to_path = {}
+    emotion_map = {}
+    character_names = []
+    for char_folder in os.listdir(voices_dir):
+        char_path = os.path.join(voices_dir, char_folder)
+        if os.path.isdir(char_path):
+            character_names.append(char_folder)
+            for file in os.listdir(char_path):
+                if any(file.endswith(ext) for ext in supported_exts):
+                    # For emotion mapping
+                    if char_folder not in emotion_map:
+                        emotion_map[char_folder] = {}
+                    emotion = file.split('_')[1].split('.')[0].lower() if '_' in file else "normal"
+                    emotion_map[char_folder][emotion] = os.path.join(char_path, file)
+    return character_names, label_to_path, emotion_map
 
 # ================
 # Gradio UI
 # ================
 def launch_ui():
-    voice_labels, label_to_path = _list_default_voices("example_voice")
+    character_names, label_to_path, emotion_map = _list_default_voices("example_voice")
 
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
         gr.Markdown("""
         # F5-TTS: Vietnamese Text-to-Speech Synthesis.
-        Chọn giọng có sẵn hoặc tải lên mẫu giọng, sau đó nhập văn bản để tạo giọng nói tự nhiên.
+        Chọn nhân vật, nhập văn bản với nhãn cảm xúc (ví dụ: {happy} Xin chào! {normal} Tôi buồn.), hệ thống sẽ tự động chuyển đổi cảm xúc theo nhãn nếu có audio phù hợp.
         """)
 
         with gr.Row():
             voice_dropdown = gr.Dropdown(
-                choices=voice_labels,
-                value=voice_labels[0] if voice_labels else None,
-                label="Chọn giọng có sẵn (default_voices)",
+                choices=character_names,
+                value=character_names[0] if character_names else None,
+                label="Chọn nhân vật",
                 interactive=True
             )
             ref_audio = gr.Audio(
@@ -237,28 +246,54 @@ def launch_ui():
         def infer_ui(selected_voice, ref_audio_path, gen_text, speed, pitch_shift_val, gain_db_val,
                     eq_cutoff_val, echo_delay_val, echo_decay_val, compression_enabled,
                     silence_duration_val, pitch_mod_depth_val, pitch_mod_rate_val, formant_ratio_val):
-            # Resolve reference audio path: uploaded > selected default voice
-            resolved_ref = None
+            # Resolve reference audio path: uploaded > selected default voice (with emotion support)
+            def parse_emotion_segments(text):
+                import re
+                pattern = r"\{(.*?)\}"
+                tokens = re.split(pattern, text)
+                segments = []
+                current_emotion = "normal"
+                for i in range(len(tokens)):
+                    if i % 2 == 0:
+                        segment_text = tokens[i].strip()
+                        if segment_text:
+                            segments.append((current_emotion, segment_text))
+                    else:
+                        current_emotion = tokens[i].strip().lower()
+                return segments
+
+            # If user uploads audio, use it for all segments
             if ref_audio_path:
                 resolved_ref = ref_audio_path
-            elif selected_voice:
-                path = label_to_path.get(selected_voice)
-                if path and os.path.exists(path):
-                    resolved_ref = path
-
-            if not resolved_ref:
-                raise gr.Error("Vui lòng chọn giọng có sẵn hoặc tải lên file audio mẫu.")
-            if not gen_text or not gen_text.strip():
-                raise gr.Error("Vui lòng nhập nội dung văn bản để tổng hợp giọng.")
-
-            # Set attributes for pitch/gain for this call
-            run_inference._pitch_shift = pitch_shift_val
-            run_inference._gain_db = gain_db_val
-            sr, wave, spec = run_inference(resolved_ref, "", gen_text.strip(), speed)
-            # Clean up after call
-            del run_inference._pitch_shift
-            del run_inference._gain_db
-
+                sr, wave, spec = run_inference(resolved_ref, "", gen_text.strip(), speed)
+            else:
+                # Use selected character and its emotion files
+                char_name = selected_voice
+                char_emotions = emotion_map.get(char_name, {})
+                segments = parse_emotion_segments(gen_text.strip())
+                waves = []
+                specs = []
+                for emotion, text in segments:
+                    # Map emotion label to file, fallback to 'normal' or first available
+                    ref_audio_path = char_emotions.get(emotion)
+                    if not ref_audio_path:
+                        ref_audio_path = char_emotions.get("normal")
+                    if not ref_audio_path and len(char_emotions) > 0:
+                        ref_audio_path = list(char_emotions.values())[0]
+                    if not ref_audio_path or not os.path.exists(ref_audio_path):
+                        # Skip this segment if no valid audio
+                        continue
+                    run_inference._pitch_shift = pitch_shift_val
+                    run_inference._gain_db = gain_db_val
+                    sr, wave, spec = run_inference(ref_audio_path, "", text, speed)
+                    del run_inference._pitch_shift
+                    del run_inference._gain_db
+                    waves.append(wave)
+                    specs.append(spec)
+                if not waves:
+                    raise gr.Error(f"Không tìm thấy audio hợp lệ cho nhân vật '{char_name}'.")
+                wave = np.concatenate(waves)
+                spec = np.concatenate(specs, axis=1) if specs else None
             # Only apply effects if user changes from default (no adjustment)
             # 1. EQ/filtering
             if eq_cutoff_val != 3000:
@@ -284,12 +319,11 @@ def launch_ui():
                     wave = shift_formants(wave, sr, ratio=formant_ratio_val)
                 except Exception:
                     pass
-
             # Clip to [-1, 1] after all effects
             wave = np.clip(wave, -1.0, 1.0)
-
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                save_spectrogram(spec, tmp.name)
+                if spec is not None:
+                    save_spectrogram(spec, tmp.name)
                 spectrogram_path = tmp.name
             return (sr, wave), spectrogram_path
 
