@@ -4,32 +4,14 @@ import os
 import uuid
 import tempfile
 import numpy as np
-import librosa
 import threading
-import requests
 import glob
-import scipy.signal
-import parselmouth
+import requests
+import tempfile
+import os
+import uuid
 
-import torch
-import uvicorn
-import gradio as gr
-from pydub import AudioSegment, effects
-from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from cached_path import cached_path
-from huggingface_hub import login
-
-from vinorm import TTSnorm
-from f5_tts.model import DiT
-from f5_tts.infer.utils_infer import (
-    preprocess_ref_audio_text,
-    load_vocoder,
-    load_model,
-    infer_process,
-    save_spectrogram,
-)
+# Heavy imports will be moved inside functions for faster boot
 
 # ================
 # Hugging Face login (if token is available)
@@ -41,22 +23,39 @@ if hf_token:
 # ================
 # Shared Model Setup
 # ================
-VOCAB_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/config.json"))
-CKPT_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/model_last.pt"))
+VOCAB_FILE = None
+CKPT_FILE = None
+model = None
+vocoder = None
 
-vocoder = load_vocoder()
-model = load_model(
-    DiT,
-    dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4),
-    ckpt_path=CKPT_FILE,
-    vocab_file=VOCAB_FILE,
-)
+def lazy_load_model():
+    global model, vocoder, VOCAB_FILE, CKPT_FILE
+    if model is not None and vocoder is not None:
+        return model, vocoder
+    from cached_path import cached_path
+    from huggingface_hub import login
+    from f5_tts.model import DiT
+    from f5_tts.infer.utils_infer import load_vocoder, load_model
+    hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
+    if hf_token:
+        login(token=hf_token)
+    VOCAB_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/config.json"))
+    CKPT_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/model_last.pt"))
+    vocoder = load_vocoder()
+    model = load_model(
+        DiT,
+        dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, conv_layers=4),
+        ckpt_path=CKPT_FILE,
+        vocab_file=VOCAB_FILE,
+    )
+    return model, vocoder
 
 # ================
 # Advanced Audio Effects Helpers
 # ================
 # 1. EQ/filtering (low-pass filter example)
 def lowpass_filter(data, sr, cutoff=3000):
+    import scipy.signal
     b, a = scipy.signal.butter(N=6, Wn=cutoff/(sr/2), btype='low')
     return scipy.signal.lfilter(b, a, data)
 
@@ -69,19 +68,20 @@ def add_echo(data, sr, delay=0.2, decay=0.4):
     return np.clip(data + echo, -1.0, 1.0)
 
 # 3. Dynamic range compression (using pydub)
-try:
-    def compress_dynamic_range_np(data, sr):
-        audio = AudioSegment(
-            (data * 32767).astype(np.int16).tobytes(),
-            frame_rate=sr,
-            sample_width=2,
-            channels=1
-        )
-        compressed = effects.compress_dynamic_range(audio)
-        return np.array(compressed.get_array_of_samples()).astype(np.float32) / 32767
-except ImportError:
-    def compress_dynamic_range_np(data, sr):
+def compress_dynamic_range_np(data, sr):
+    try:
+        from pydub import AudioSegment, effects
+    except ImportError:
         raise ImportError("pydub is not installed. Run 'pip install pydub'.")
+    audio = AudioSegment(
+        (data * 32767).astype(np.int16).tobytes(),
+        frame_rate=sr,
+        sample_width=2,
+        channels=1
+    )
+    compressed = effects.compress_dynamic_range(audio)
+    import numpy as np
+    return np.array(compressed.get_array_of_samples()).astype(np.float32) / 32767
 
 # 4. Silence insertion
 def add_silence(data, sr, duration=0.5):
@@ -90,7 +90,8 @@ def add_silence(data, sr, duration=0.5):
 
 # 5. Pitch range modulation (vibrato-like effect)
 def modulate_pitch(data, sr, depth=2, rate=5):
-    """Apply vibrato-like pitch modulation. depth in semitones, rate in Hz."""
+    import numpy as np
+    import librosa
     t = np.arange(len(data)) / sr
     mod = depth * np.sin(2 * np.pi * rate * t)
     out = np.zeros_like(data)
@@ -104,15 +105,14 @@ def modulate_pitch(data, sr, depth=2, rate=5):
     return out
 
 # 6. Formant shifting using praat-parselmouth
-try:
-    def shift_formants(data, sr, ratio=1.2):
-        """Shift formants using praat-parselmouth. ratio > 1 raises formants, < 1 lowers."""
-        snd = parselmouth.Sound(data, sr)
-        manipulated = snd.clone().change_gender(formant_shift_ratio=ratio)
-        return manipulated.values[0]
-except ImportError:
-    def shift_formants(data, sr, ratio=1.2):
+def shift_formants(data, sr, ratio=1.2):
+    try:
+        import parselmouth
+    except ImportError:
         raise ImportError("parselmouth is not installed. Run 'pip install praat-parselmouth'.")
+    snd = parselmouth.Sound(data, sr)
+    manipulated = snd.clone().change_gender(formant_shift_ratio=ratio)
+    return manipulated.values[0]
 
 # ================
 # Helpers
@@ -141,6 +141,13 @@ def get_ngrok_url():
 # ================
 def run_inference(ref_audio_path, ref_text, gen_text, speed=1.0, output_path=None):
     """Main inference logic, shared by API + UI."""
+    global model, vocoder
+    if model is None or vocoder is None:
+        model, vocoder = lazy_load_model()
+    from f5_tts.infer.utils_infer import preprocess_ref_audio_text, infer_process
+    from vinorm import TTSnorm
+    import numpy as np
+    import librosa
     ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_path, ref_text or "")
     final_wave, final_sample_rate, spectrogram = infer_process(
         ref_audio,
@@ -191,6 +198,11 @@ def _list_default_voices(voices_dir: str = "default_voices"):
 # Gradio UI
 # ================
 def launch_ui():
+    import gradio as gr
+    import os
+    import numpy as np
+    import tempfile
+    from f5_tts.infer.utils_infer import save_spectrogram
     voice_labels, label_to_path = _list_default_voices("example_voice")
 
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
