@@ -324,6 +324,10 @@ def launch_ui():
 # FastAPI Server
 # ================
 def launch_api():
+    from fastapi import FastAPI, UploadFile, File, Form
+    from fastapi.responses import JSONResponse
+    from fastapi.staticfiles import StaticFiles
+    import uvicorn
     app = FastAPI(root_path="/voice")
     OUTPUT_DIR = "outputs"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
