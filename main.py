@@ -1,3 +1,19 @@
+# ================
+# Voice Enum for API
+# ================
+from enum import Enum
+
+class VoiceEnum(str, Enum):
+    """Available voices for API selection."""
+    # Dynamically populate from example_voice folder
+    pass
+
+def get_voice_enum():
+    voice_labels, label_to_path = _list_default_voices("example_voice")
+    # Dynamically create Enum members
+    members = {label: label for label in voice_labels}
+    return Enum("VoiceEnum", members)
+
 # main.py
 import argparse
 import os
@@ -327,11 +343,16 @@ def launch_api():
     from fastapi import FastAPI, UploadFile, File, Form
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
+    from fastapi import Query
     import uvicorn
     app = FastAPI(root_path="/voice")
     OUTPUT_DIR = "outputs"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
+
+    # Dynamically create Enum for voices
+    VoiceEnumAPI = get_voice_enum()
+    voice_labels, label_to_path = _list_default_voices("example_voice")
 
     @app.post("/synthesize")
     async def synthesize(
@@ -340,14 +361,22 @@ def launch_api():
         reference_text: str = Form(""),
         output_filename: str = Form(None),
         speed: float = Form(1.0),
+        voice: VoiceEnumAPI = Form(None, description="Choose a voice sample from available voices."),
     ):
         try:
 
-            # Use uploaded file or default sample
+
+            # Use uploaded file, selected voice, or default sample
             if reference_audio:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                     tmp.write(await reference_audio.read())
                     ref_audio_path = tmp.name
+            elif voice:
+                path = label_to_path.get(voice)
+                if path and os.path.exists(path):
+                    ref_audio_path = path
+                else:
+                    ref_audio_path = "example_voice/sample.wav"
             else:
                 ref_audio_path = "example_voice/sample.wav"
 
@@ -364,8 +393,7 @@ def launch_api():
             run_inference(ref_audio_path, reference_text, text, speed, output_path)
 
             ngrok_url = get_ngrok_url()
-            file_url = f"{ngrok_url}/static/{output_filename}" if ngrok_url else f"/static/{output_filename}"
-
+            file_url =  f"/static/{output_filename}"
             return JSONResponse(content={
                 "status": "success",
                 "url": file_url,
