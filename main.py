@@ -364,7 +364,7 @@ def launch_api():
     @app.post("/synthesize")
     async def synthesize(
         text: str = Form(...),
-        reference_audio: Optional[UploadFile] = File(None),
+    reference_audio: Optional[UploadFile] = File(None),
         reference_text: str = Form(""),
         output_filename: str = Form(None),
         speed: float = Form(1.0),
@@ -376,8 +376,8 @@ def launch_api():
             # User can either upload audio or select one of 4 voices
             ref_audio_path = None
             use_uploaded_audio = False
-            # Only use uploaded audio if a real file is present and has content
-            if reference_audio and hasattr(reference_audio, "filename") and reference_audio.filename:
+            # Only use uploaded audio if it's a valid UploadFile and not a string
+            if reference_audio and isinstance(reference_audio, UploadFile) and getattr(reference_audio, "filename", None):
                 contents = await reference_audio.read()
                 if contents and len(contents) > 0:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
