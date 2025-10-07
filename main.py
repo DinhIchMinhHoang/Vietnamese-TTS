@@ -375,21 +375,25 @@ def launch_api():
 
             # User can either upload audio or select one of 4 voices
             ref_audio_path = None
-            # Use uploaded audio if present and valid
+            use_uploaded_audio = False
+            # Only use uploaded audio if a real file is present and has content
             if reference_audio and hasattr(reference_audio, "filename") and reference_audio.filename:
                 contents = await reference_audio.read()
-                if contents:
+                if contents and len(contents) > 0:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                         tmp.write(contents)
                         ref_audio_path = tmp.name
+                    use_uploaded_audio = True
             # If no upload, use selected voice
-            if not ref_audio_path and voice is not None:
-                path = label_to_path.get(voice.value)
-                if path and os.path.exists(path):
-                    ref_audio_path = path
-            # Fallback to default if neither
-            if not ref_audio_path:
-                ref_audio_path = "example_voice/nam_giong_bac.wav"
+            if not use_uploaded_audio:
+                if voice is not None:
+                    path = label_to_path.get(voice.value)
+                    if path and os.path.exists(path):
+                        ref_audio_path = path
+                    else:
+                        ref_audio_path = "example_voice/nam_giong_bac.wav"
+                else:
+                    ref_audio_path = "example_voice/nam_giong_bac.wav"
 
             #speed
             speed = max(0.3, min(2.0, speed))
@@ -403,7 +407,7 @@ def launch_api():
 
             run_inference(ref_audio_path, reference_text, text, speed, output_path)
 
-            ngrok_url = get_ngrok_url()
+            # ngrok_url = get_ngrok_url()
             file_url =  f"/static/{output_filename}"
             return JSONResponse(content={
                 "status": "success",
