@@ -343,11 +343,6 @@ def launch_ui():
 # FastAPI Server
 # ================
 def launch_api():
-    @app.get("/voices")
-    async def get_voices():
-        # Trả về danh sách tên giọng đọc có thể sử dụng
-        voices = list(label_to_path.keys())
-        return {"voices": voices}
     from fastapi import FastAPI, UploadFile, File, Form
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
@@ -358,10 +353,18 @@ def launch_api():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
 
+    @app.get("/voices")
+    async def get_voices():
+        # Trả về danh sách tên giọng đọc có thể sử dụng
+        voices = list(label_to_path.keys())
+        return {"voices": voices}
+
+    from typing import Optional
+
     @app.post("/synthesize")
     async def synthesize(
         text: str = Form(...),
-        reference_audio: UploadFile = File(None),
+        reference_audio: Optional[UploadFile] = File(None),
         reference_text: str = Form(""),
         output_filename: str = Form(None),
         speed: float = Form(1.0),
@@ -372,13 +375,13 @@ def launch_api():
 
             # User can either upload audio or select one of 4 voices
             ref_audio_path = None
-            if reference_audio is not None:
-                if isinstance(reference_audio, UploadFile):
-                    contents = await reference_audio.read()
-                    if contents:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                            tmp.write(contents)
-                            ref_audio_path = tmp.name
+            # Use uploaded audio if present and valid
+            if reference_audio and hasattr(reference_audio, "filename") and reference_audio.filename:
+                contents = await reference_audio.read()
+                if contents:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                        tmp.write(contents)
+                        ref_audio_path = tmp.name
             # If no upload, use selected voice
             if not ref_audio_path and voice is not None:
                 path = label_to_path.get(voice.value)
