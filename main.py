@@ -343,6 +343,11 @@ def launch_ui():
 # FastAPI Server
 # ================
 def launch_api():
+    @app.get("/voices")
+    async def get_voices():
+        # Trả về danh sách tên giọng đọc có thể sử dụng
+        voices = list(label_to_path.keys())
+        return {"voices": voices}
     from fastapi import FastAPI, UploadFile, File, Form
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
