@@ -1,18 +1,21 @@
+
 # ================
-# Voice Enum for API
+# Voice Enum for API (fixed to 4 voices)
 # ================
 from enum import Enum
 
 class VoiceEnum(str, Enum):
-    """Available voices for API selection."""
-    # Dynamically populate from example_voice folder
-    pass
+    NAM_GIONG_BAC = "nam_giong_bac.wav"
+    NAM_MIEN_NAM = "nam_mien_nam.wav"
+    NU_GIONG_BAC = "nu_giong_bac.wav"
+    NU_GIONG_NAM = "nu_giong_nam.wav"
 
-def get_voice_enum():
-    voice_labels, label_to_path = _list_default_voices("example_voice")
-    # Dynamically create Enum members
-    members = {label: label for label in voice_labels}
-    return Enum("VoiceEnum", members)
+label_to_path = {
+    "nam_giong_bac.wav": "example_voice/nam_giong_bac.wav",
+    "nam_mien_nam.wav": "example_voice/nam_mien_nam.wav",
+    "nu_giong_bac.wav": "example_voice/nu_giong_bac.wav",
+    "nu_giong_nam.wav": "example_voice/nu_giong_nam.wav",
+}
 
 # main.py
 import argparse
@@ -350,10 +353,6 @@ def launch_api():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
 
-    # Dynamically create Enum for voices
-    VoiceEnumAPI = get_voice_enum()
-    voice_labels, label_to_path = _list_default_voices("example_voice")
-
     @app.post("/synthesize")
     async def synthesize(
         text: str = Form(...),
@@ -361,24 +360,28 @@ def launch_api():
         reference_text: str = Form(""),
         output_filename: str = Form(None),
         speed: float = Form(1.0),
-        voice: VoiceEnumAPI = Form(None, description="Choose a voice sample from available voices."),
+        voice: VoiceEnum = Form(None, description="Choose a voice sample from available voices."),
     ):
         try:
 
 
-            # Use uploaded file, selected voice, or default sample
-            if reference_audio:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                    tmp.write(await reference_audio.read())
-                    ref_audio_path = tmp.name
-            elif voice:
-                path = label_to_path.get(voice)
+            # User can either upload audio or select one of 4 voices
+            ref_audio_path = None
+            if reference_audio is not None:
+                if isinstance(reference_audio, UploadFile):
+                    contents = await reference_audio.read()
+                    if contents:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+                            tmp.write(contents)
+                            ref_audio_path = tmp.name
+            # If no upload, use selected voice
+            if not ref_audio_path and voice is not None:
+                path = label_to_path.get(voice.value)
                 if path and os.path.exists(path):
                     ref_audio_path = path
-                else:
-                    ref_audio_path = "example_voice/sample.wav"
-            else:
-                ref_audio_path = "example_voice/sample.wav"
+            # Fallback to default if neither
+            if not ref_audio_path:
+                ref_audio_path = "example_voice/nam_giong_bac.wav"
 
             #speed
             speed = max(0.3, min(2.0, speed))
