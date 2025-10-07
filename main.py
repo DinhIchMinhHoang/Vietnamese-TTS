@@ -125,16 +125,16 @@ def post_process(text: str) -> str:
     text = text.replace('"', "")
     return " ".join(text.split())
 
-def get_ngrok_url():
-    """Try to detect ngrok public URL (if running)."""
-    try:
-        resp = requests.get("http://127.0.0.1:4040/api/tunnels").json()
-        for tunnel in resp["tunnels"]:
-            if tunnel["public_url"].startswith("https://"):
-                return tunnel["public_url"]
-    except Exception:
-        return None
-    return None
+###def get_ngrok_url():
+  #  """Try to detect ngrok public URL (if running)."""
+  #  try:
+  #      resp = requests.get("http://127.0.0.1:4040/api/tunnels").json()
+  #      for tunnel in resp["tunnels"]:
+  #          if tunnel["public_url"].startswith("https://"):
+  #              return tunnel["public_url"]
+  #  except Exception:
+  #      return None
+  #  return None
 
 # ================
 # Unified Inference
