@@ -398,11 +398,13 @@ def launch_api():
             #speed
             speed = max(0.3, min(2.0, speed))
 
-            if not output_filename:
-                output_filename = f"{uuid.uuid4().hex}.wav"
-            elif not output_filename.lower().endswith(".wav"):
-                output_filename += ".wav"
 
+            # Always append a unique UUID to the filename to prevent collisions
+            unique_id = uuid.uuid4().hex
+            base, ext = os.path.splitext(output_filename) if output_filename else ("", ".wav")
+            if not ext or ext.lower() != ".wav":
+                ext = ".wav"
+            output_filename = f"{base}_{unique_id}{ext}"
             output_path = os.path.join(OUTPUT_DIR, output_filename)
 
             run_inference(ref_audio_path, reference_text, text, speed, output_path)
