@@ -1,4 +1,3 @@
-
 # ================
 # Voice Enum for API (fixed to 4 voices)
 # ================
@@ -466,7 +465,7 @@ def launch_api(language="vi"):
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8081)
 
 # ================
 # Run Both (UI + API)
