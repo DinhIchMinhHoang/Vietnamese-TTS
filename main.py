@@ -36,8 +36,8 @@ import uuid
 # Hugging Face login (if token is available)
 # ================
 hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
-if hf_token:
-    login(token=hf_token)
+# if hf_token:
+#     login(token=hf_token)
 
 # ================
 # Shared Model Setup
@@ -346,9 +346,18 @@ def launch_api():
     from fastapi import FastAPI, UploadFile, File, Form
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
+    from fastapi.middleware.cors import CORSMiddleware
     from fastapi import Query
     import uvicorn
     app = FastAPI(root_path="/voice")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # hoặc ["http://localhost:8086"]
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     OUTPUT_DIR = "outputs"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
@@ -364,15 +373,13 @@ def launch_api():
     @app.post("/synthesize")
     async def synthesize(
         text: str = Form(...),
-    reference_audio: Optional[UploadFile] = File(None),
+        reference_audio: Optional[UploadFile] = File(None),
         reference_text: str = Form(""),
         output_filename: str = Form(None),
         speed: float = Form(1.0),
         voice: VoiceEnum = Form(None, description="Choose a voice sample from available voices."),
     ):
         try:
-
-
             # User can either upload audio or select one of 4 voices
             ref_audio_path = None
             use_uploaded_audio = False
