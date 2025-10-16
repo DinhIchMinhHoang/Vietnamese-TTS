@@ -377,7 +377,9 @@ def launch_api():
         reference_text: str = Form(""),
         output_filename: str = Form(None),
         speed: float = Form(1.0),
-        voice: VoiceEnum = Form(None, description="Choose a voice sample from available voices."),
+        voice: VoiceEnum = Form(None,
+                                description="Choose a voice sample from available voices."
+                                ),
     ):
         try:
             # User can either upload audio or select one of 4 voices
@@ -390,9 +392,11 @@ def launch_api():
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                         tmp.write(contents)
                         ref_audio_path = tmp.name
+                    print(f"Upload voice {ref_audio_path}")
                     use_uploaded_audio = True
             # If no upload, use selected voice
             if not use_uploaded_audio:
+
                 if voice is not None:
                     path = label_to_path.get(voice.value)
                     if path and os.path.exists(path):
@@ -402,12 +406,13 @@ def launch_api():
                 else:
                     ref_audio_path = "example_voice/nam_giong_bac.wav"
 
+                print(f"Default voice {ref_audio_path}")
             #speed
             speed = max(0.3, min(2.0, speed))
 
 
             # Always append a unique UUID to the filename to prevent collisions
-            unique_id = uuid.uuid4().hex
+            unique_id = str(uuid.uuid4())
             base, ext = os.path.splitext(output_filename) if output_filename else ("", ".wav")
             if not ext or ext.lower() != ".wav":
                 ext = ".wav"
