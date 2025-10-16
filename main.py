@@ -3,18 +3,22 @@
 # Voice Enum for API (fixed to 4 voices)
 # ================
 from enum import Enum
+import shutil
+
 
 class VoiceEnum(str, Enum):
     NAM_GIONG_BAC = "nam_giong_bac.wav"
     NAM_MIEN_NAM = "nam_mien_nam.wav"
     NU_GIONG_BAC = "nu_giong_bac.wav"
     NU_GIONG_NAM = "nu_giong_nam.wav"
+    TRUMP = "part1_fixed.wav"
 
 label_to_path = {
     "nam_giong_bac.wav": "example_voice/nam_giong_bac.wav",
     "nam_mien_nam.wav": "example_voice/nam_mien_nam.wav",
     "nu_giong_bac.wav": "example_voice/nu_giong_bac.wav",
     "nu_giong_nam.wav": "example_voice/nu_giong_nam.wav",
+    "part1_fixed.wav": "example_voice/part1_fixed.wav",  # Trump voice
 }
 
 # main.py
@@ -47,7 +51,7 @@ CKPT_FILE = None
 model = None
 vocoder = None
 
-def lazy_load_model():
+def lazy_load_model(language="vi"):
     global model, vocoder, VOCAB_FILE, CKPT_FILE
     if model is not None and vocoder is not None:
         return model, vocoder
@@ -58,8 +62,14 @@ def lazy_load_model():
     hf_token = os.getenv("HUGGINGFACEHUB_API_TOKEN")
     if hf_token:
         login(token=hf_token)
-    VOCAB_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/config.json"))
-    CKPT_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/model_last.pt"))
+    if language == "en":
+        # English F5TTS Base model (update repo/model path as needed)
+        VOCAB_FILE = str(cached_path("hf://SWivid/F5-TTS/F5TTS_Base/vocab.txt"))
+        CKPT_FILE = str(cached_path("hf://SWivid/F5-TTS/F5TTS_Base/model_1200000.pt"))
+    else:
+        # Vietnamese model
+        VOCAB_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/config.json"))
+        CKPT_FILE = str(cached_path("hf://hynt/F5-TTS-Vietnamese-ViVoice/model_last.pt"))
     vocoder = load_vocoder()
     model = load_model(
         DiT,
@@ -158,20 +168,29 @@ def post_process(text: str) -> str:
 # ================
 # Unified Inference
 # ================
-def run_inference(ref_audio_path, ref_text, gen_text, speed=1.0, output_path=None):
+def run_inference(ref_audio_path, ref_text, gen_text, speed=1.0, output_path=None, language="vi"):
     """Main inference logic, shared by API + UI."""
     global model, vocoder
     if model is None or vocoder is None:
-        model, vocoder = lazy_load_model()
+        model, vocoder = lazy_load_model(language=language)
     from f5_tts.infer.utils_infer import preprocess_ref_audio_text, infer_process
-    from vinorm import TTSnorm
     import numpy as np
     import librosa
-    ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_path, ref_text or "")
+    # Language-aware normalization and ASR
+    if language == "en":
+        # Use English ASR (e.g., Whisper with language='en')
+        def norm(text):
+            return post_process(text)
+        ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_path, ref_text or "", language="en")
+    else:
+        from vinorm import TTSnorm
+        def norm(text):
+            return post_process(TTSnorm(text))
+        ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_path, ref_text or "", language="vi")
     final_wave, final_sample_rate, spectrogram = infer_process(
         ref_audio,
         ref_text.lower(),
-        post_process(TTSnorm(gen_text)).lower(),
+        norm(gen_text).lower(),
         model,
         vocoder,
         speed=speed,
@@ -216,13 +235,36 @@ def _list_default_voices(voices_dir: str = "default_voices"):
 # ================
 # Gradio UI
 # ================
-def launch_ui():
+def launch_ui(language="vi"):
     import gradio as gr
     import os
     import numpy as np
     import tempfile
     from f5_tts.infer.utils_infer import save_spectrogram
     voice_labels, label_to_path = _list_default_voices("example_voice")
+    # Optionally update UI labels for English
+    if language == "en":
+        ui_title = "F5-TTS: English Text-to-Speech Synthesis."
+        ui_desc = "Select a default voice or upload a sample, then enter text to synthesize natural speech."
+        voice_label = "Select default voice (default_voices)"
+        ref_audio_label = "Or upload a sample voice (optional)"
+        text_label = "Text"
+        text_placeholder = "Enter text..."
+        error_voice = "Please select a default voice or upload a sample audio file."
+        error_text = "Please enter text to synthesize."
+        output_audio_label = "Generated Audio"
+        output_spectrogram_label = "Spectrogram"
+    else:
+        ui_title = "F5-TTS: Vietnamese Text-to-Speech Synthesis."
+        ui_desc = "Chọn giọng có sẵn hoặc tải lên mẫu giọng, sau đó nhập văn bản để tạo giọng nói tự nhiên."
+        voice_label = "Chọn giọng có sẵn (default_voices)"
+        ref_audio_label = "Hoặc tải lên mẫu giọng (tùy chọn)"
+        text_label = "Text"
+        text_placeholder = "Enter text..."
+        error_voice = "Vui lòng chọn giọng có sẵn hoặc tải lên file audio mẫu."
+        error_text = "Vui lòng nhập nội dung văn bản để tổng hợp giọng."
+        output_audio_label = "Generated Audio"
+        output_spectrogram_label = "Spectrogram"
 
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
         gr.Markdown("""
@@ -234,15 +276,15 @@ def launch_ui():
             voice_dropdown = gr.Dropdown(
                 choices=voice_labels,
                 value=voice_labels[0] if voice_labels else None,
-                label="Chọn giọng có sẵn (default_voices)",
+                label=voice_label,
                 interactive=True
             )
             ref_audio = gr.Audio(
-                label="Hoặc tải lên mẫu giọng (tùy chọn)",
+                label=ref_audio_label,
                 type="filepath"
             )
 
-        gen_text = gr.Textbox(label="Text", placeholder="Enter text...", lines=3)
+        gen_text = gr.Textbox(label=text_label, placeholder=text_placeholder, lines=3)
 
         with gr.Row():
             speed = gr.Slider(0.3, 2.0, value=1.0, step=0.1, label="⚡️ Speed")
@@ -262,8 +304,8 @@ def launch_ui():
         btn_synthesize = gr.Button("🔥 Generate Voice")
 
         with gr.Row():
-            output_audio = gr.Audio(label="Generated Audio", type="numpy")
-            output_spectrogram = gr.Image(label="Spectrogram")
+            output_audio = gr.Audio(label=output_audio_label, type="numpy")
+            output_spectrogram = gr.Image(label=output_spectrogram_label)
 
         def infer_ui(selected_voice, ref_audio_path, gen_text, speed, pitch_shift_val, gain_db_val,
                     eq_cutoff_val, echo_delay_val, echo_decay_val, compression_enabled,
@@ -278,14 +320,14 @@ def launch_ui():
                     resolved_ref = path
 
             if not resolved_ref:
-                raise gr.Error("Vui lòng chọn giọng có sẵn hoặc tải lên file audio mẫu.")
+                raise gr.Error(error_voice)
             if not gen_text or not gen_text.strip():
-                raise gr.Error("Vui lòng nhập nội dung văn bản để tổng hợp giọng.")
+                raise gr.Error(error_text)
 
             # Set attributes for pitch/gain for this call
             run_inference._pitch_shift = pitch_shift_val
             run_inference._gain_db = gain_db_val
-            sr, wave, spec = run_inference(resolved_ref, "", gen_text.strip(), speed)
+            sr, wave, spec = run_inference(resolved_ref, "", gen_text.strip(), speed, language=language)
             # Clean up after call
             del run_inference._pitch_shift
             del run_inference._gain_db
@@ -342,7 +384,7 @@ def launch_ui():
 # ================
 # FastAPI Server
 # ================
-def launch_api():
+def launch_api(language="vi"):
     from fastapi import FastAPI, UploadFile, File, Form
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
@@ -377,13 +419,18 @@ def launch_api():
             ref_audio_path = None
             use_uploaded_audio = False
             # Only use uploaded audio if it's a valid UploadFile and not a string
-            if reference_audio and isinstance(reference_audio, UploadFile) and getattr(reference_audio, "filename", None):
+            if reference_audio is not None:
                 contents = await reference_audio.read()
-                if contents and len(contents) > 0:
+                # FIX 2: Ghi file tạm thời
+                if contents:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                         tmp.write(contents)
                         ref_audio_path = tmp.name
                     use_uploaded_audio = True
+                    print(f"✅ Dùng uploaded audio: {reference_audio.filename}")
+                else:
+                    use_uploaded_audio = False
+                    print(f"⚠️ File rỗng, dùng voice mặc định")
             # If no upload, use selected voice
             if not use_uploaded_audio:
                 if voice is not None:
@@ -407,7 +454,7 @@ def launch_api():
             output_filename = f"{base}_{unique_id}{ext}"
             output_path = os.path.join(OUTPUT_DIR, output_filename)
 
-            run_inference(ref_audio_path, reference_text, text, speed, output_path)
+            run_inference(ref_audio_path, reference_text, text, speed, output_path, language=language)
 
             # ngrok_url = get_ngrok_url()
             file_url =  f"/static/{output_filename}"
@@ -427,18 +474,27 @@ def launch_api():
 def launch_both():
     threading.Thread(target=launch_api, daemon=True).start()
     launch_ui()
+    run_inference(ref_audio_path, reference_text, text, speed, output_path, language="vi")
 
 # ================
 # Entry Point
 # ================
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["ui", "api", "both"], default="ui")
+    parser.add_argument(
+        "--mode",
+        choices=["ui_en", "api_en", "ui_vi", "api_vi"],
+        default="ui_vi",
+        help="Choose mode: ui_en/api_en for English, ui_vi/api_vi for Vietnamese"
+    )
     args = parser.parse_args()
 
-    if args.mode == "ui":
-        launch_ui()
-    elif args.mode == "api":
-        launch_api()
-    elif args.mode == "both":
-        launch_both()
+    if args.mode == "ui_en":
+        launch_ui(language="en")
+    elif args.mode == "api_en":
+        launch_api(language="en")
+    elif args.mode == "ui_vi":
+        launch_ui(language="vi")
+    elif args.mode == "api_vi":
+        launch_api(language="vi")
