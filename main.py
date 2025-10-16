@@ -386,15 +386,21 @@ def launch_api():
             ref_audio_path = None
             use_uploaded_audio = False
             # Only use uploaded audio if it's a valid UploadFile and not a string
-            if reference_audio and isinstance(reference_audio, UploadFile) and getattr(reference_audio, "filename", None):
+            # FIX 1: Kiểm tra file upload đúng cách
+            print("Start check ..")
+            if reference_audio is not None:
+                print("Audio uploads ..")
                 contents = await reference_audio.read()
-                print(f"Upload voice {contents} and {len(contents)}")
-                if contents and len(contents) > 0:
+                print("Audio uploads .. 12")
+                # FIX 2: Ghi file tạm thời
+                if contents:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                         tmp.write(contents)
                         ref_audio_path = tmp.name
-                    print(f"Upload voice {ref_audio_path}")
                     use_uploaded_audio = True
+                    print(f"✅ Dùng uploaded audio: {reference_audio.filename}")
+                else:
+                    print(f"⚠️ File rỗng, dùng voice mặc định")
             # If no upload, use selected voice
             if not use_uploaded_audio:
 
