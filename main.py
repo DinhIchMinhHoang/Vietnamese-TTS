@@ -388,6 +388,7 @@ def launch_api():
             # Only use uploaded audio if it's a valid UploadFile and not a string
             if reference_audio and isinstance(reference_audio, UploadFile) and getattr(reference_audio, "filename", None):
                 contents = await reference_audio.read()
+                print(f"Upload voice {contents} and {len(contents)}")
                 if contents and len(contents) > 0:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
                         tmp.write(contents)
