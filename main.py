@@ -180,12 +180,12 @@ def run_inference(ref_audio_path, ref_text, gen_text, speed=1.0, output_path=Non
         # Use English ASR (e.g., Whisper with language='en')
         def norm(text):
             return post_process(text)
-        ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_path, ref_text or "", language="en")
+        ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_path, ref_text or "")
     else:
         from vinorm import TTSnorm
         def norm(text):
             return post_process(TTSnorm(text))
-        ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_path, ref_text or "", language="vi")
+        ref_audio, ref_text = preprocess_ref_audio_text(ref_audio_path, ref_text or "")
     final_wave, final_sample_rate, spectrogram = infer_process(
         ref_audio,
         ref_text.lower(),
