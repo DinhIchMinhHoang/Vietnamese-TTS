@@ -387,9 +387,17 @@ def launch_api(language="vi"):
     from fastapi import FastAPI, UploadFile, File, Form
     from fastapi.responses import JSONResponse
     from fastapi.staticfiles import StaticFiles
+    from fastapi.middleware.cors import CORSMiddleware
     from fastapi import Query
     import uvicorn
     app = FastAPI(root_path="/voice")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # hoặc ["http://localhost:8086"]
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     OUTPUT_DIR = "outputs"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
