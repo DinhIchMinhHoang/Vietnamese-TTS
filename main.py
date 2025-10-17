@@ -10,14 +10,22 @@ class VoiceEnum(str, Enum):
     NAM_MIEN_NAM = "nam_mien_nam.wav"
     NU_GIONG_BAC = "nu_giong_bac.wav"
     NU_GIONG_NAM = "nu_giong_nam.wav"
-    TRUMP = "part1_fixed.wav"
+    TRUMP = "Trump.wav"
+    DAVE = "Dave.wav"
+    JACOB = "Jacob.wav"
+    LUCY = "Lucy.wav"
+    TRE_EM = "tre_em.wav"
 
 label_to_path = {
     "nam_giong_bac.wav": "example_voice/nam_giong_bac.wav",
     "nam_mien_nam.wav": "example_voice/nam_mien_nam.wav",
     "nu_giong_bac.wav": "example_voice/nu_giong_bac.wav",
     "nu_giong_nam.wav": "example_voice/nu_giong_nam.wav",
-    "part1_fixed.wav": "example_voice/part1_fixed.wav",  # Trump voice
+    "Trump.wav": "example_voice/Trump.wav",
+    "Dave.wav": "example_voice/Dave.wav",
+    "Jacob.wav": "example_voice/Jacob.wav",
+    "Lucy.wav": "example_voice/Lucy.wav",
+    "tre_em.wav": "example_voice/tre_em.wav",
 }
 
 # main.py
