@@ -72,54 +72,95 @@ def chunk_text(text, max_chars=135):
 
 
 
-    # Bước 1: Tách câu bằng underthesea cho tiếng Việt
-    try:
-        from underthesea import sent_tokenize
-        sentences = sent_tokenize(text)
-    except ImportError:
-        # Fallback: dùng regex nếu underthesea chưa cài đặt
+    # Language detection: simple heuristic
+    def is_english(text):
+        # If mostly ascii and contains common English words
         import re
-        sentence_endings = r'[\.\!\?…]+[\s\n]+'
-        sentences = re.split(sentence_endings, text)
-        sentences = [s.strip() for s in sentences if s.strip()]
+        ascii_ratio = sum(1 for c in text if ord(c) < 128) / max(1, len(text))
+        common_en = re.search(r"\b(the|and|is|are|I|you|he|she|it|we|they|of|to|in|that|have|for|not|on|with|as|do|at)\b", text, re.I)
+        return ascii_ratio > 0.9 and common_en
 
-    # Ghép câu ngắn hơn 4 từ với câu liền kề
-    i = 0
-    while i < len(sentences):
-        if len(sentences[i].split()) < 4:
-            if i == 0 and i + 1 < len(sentences):
-                sentences[i + 1] = sentences[i] + ', ' + sentences[i + 1]
-                del sentences[i]
-            else:
-                if i - 1 >= 0:
-                    sentences[i - 1] = sentences[i - 1] + ', ' + sentences[i]
-                    del sentences[i]
-                    i -= 1
-        else:
-            i += 1
-
-    # Bước 2: Tách phần quá dài trong câu theo dấu ", "
-    import re
-    final_sentences = []
-    for sentence in sentences:
-        parts = [p.strip() for p in re.split(r',|;', sentence)]
-        buffer = []
-        for part in parts:
-            buffer.append(part)
-            total_words = sum(len(p.split()) for p in buffer)
-            if total_words > 20:
-                long_part = ', '.join(buffer)
-                final_sentences.append(long_part)
+    if is_english(text):
+        # Use nltk for English sentence splitting
+        try:
+            import nltk
+            nltk.download('punkt', quiet=True)
+            from nltk.tokenize import sent_tokenize
+            sentences = sent_tokenize(text)
+        except Exception:
+            # Fallback: regex
+            import re
+            sentence_endings = r'[\.\!\?…]+[\s\n]+'
+            sentences = re.split(sentence_endings, text)
+            sentences = [s.strip() for s in sentences if s.strip()]
+        # Do NOT merge short sentences for English
+        # Only split long sentences if needed
+        final_sentences = []
+        for sentence in sentences:
+            if len(sentence.split()) > 30:
+                # Split by comma if too long
+                parts = [p.strip() for p in re.split(r',|;', sentence)]
                 buffer = []
-        if buffer:
-            final_sentences.append(', '.join(buffer))
+                for part in parts:
+                    buffer.append(part)
+                    total_words = sum(len(p.split()) for p in buffer)
+                    if total_words > 20:
+                        long_part = ', '.join(buffer)
+                        final_sentences.append(long_part)
+                        buffer = []
+                if buffer:
+                    final_sentences.append(', '.join(buffer))
+            else:
+                final_sentences.append(sentence)
+        return final_sentences
+    else:
+        # Vietnamese logic (unchanged)
+        try:
+            from underthesea import sent_tokenize
+            sentences = sent_tokenize(text)
+        except ImportError:
+            import re
+            sentence_endings = r'[\.\!\?…]+[\s\n]+'
+            sentences = re.split(sentence_endings, text)
+            sentences = [s.strip() for s in sentences if s.strip()]
 
-    # Ghép phần cuối quá ngắn
-    if len(final_sentences) >= 2 and len(final_sentences[-1].split()) < 4:
-        final_sentences[-2] = final_sentences[-2] + ', ' + final_sentences[-1]
-        final_sentences = final_sentences[:-1]
+        # Ghép câu ngắn hơn 4 từ với câu liền kề
+        i = 0
+        while i < len(sentences):
+            if len(sentences[i].split()) < 4:
+                if i == 0 and i + 1 < len(sentences):
+                    sentences[i + 1] = sentences[i] + ', ' + sentences[i + 1]
+                    del sentences[i]
+                else:
+                    if i - 1 >= 0:
+                        sentences[i - 1] = sentences[i - 1] + ', ' + sentences[i]
+                        del sentences[i]
+                        i -= 1
+            else:
+                i += 1
 
-    return final_sentences
+        # Bước 2: Tách phần quá dài trong câu theo dấu ", "
+        import re
+        final_sentences = []
+        for sentence in sentences:
+            parts = [p.strip() for p in re.split(r',|;', sentence)]
+            buffer = []
+            for part in parts:
+                buffer.append(part)
+                total_words = sum(len(p.split()) for p in buffer)
+                if total_words > 20:
+                    long_part = ', '.join(buffer)
+                    final_sentences.append(long_part)
+                    buffer = []
+            if buffer:
+                final_sentences.append(', '.join(buffer))
+
+        # Ghép phần cuối quá ngắn
+        if len(final_sentences) >= 2 and len(final_sentences[-1].split()) < 4:
+            final_sentences[-2] = final_sentences[-2] + ', ' + final_sentences[-1]
+            final_sentences = final_sentences[:-1]
+
+        return final_sentences
 
 
 # load vocoder
