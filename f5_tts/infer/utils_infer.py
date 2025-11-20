@@ -72,12 +72,21 @@ def chunk_text(text, max_chars=135):
     # Unicode NFC normalization and diacritic preservation
     import unicodedata
     text = unicodedata.normalize('NFC', text)
-    # Clean up problematic characters (e.g., quotes)
+    # Clean up problematic characters (e.g., quotes, colons, semicolons, backslashes, parentheses)
     text = text.replace('“', '"').replace('”', '"').replace("‘", "'").replace("’", "'")
     text = text.replace('...', '…')
     # Remove isolated or unmatched quotes
     text = re.sub(r'"{2,}', '"', text)
     text = re.sub(r"'{2,}", "'", text)
+    # Replace or space out problematic punctuation
+    text = text.replace(':', ' : ')
+    text = text.replace(';', ' ; ')
+    text = text.replace('\\', ' ')
+    text = text.replace('(', ' ( ')
+    text = text.replace(')', ' ) ')
+    text = text.replace('"', ' " ')
+    # Remove extra spaces
+    text = re.sub(r'\s+', ' ', text)
 
     # Step 1: Split into sentences (prefer underthesea, fallback to regex)
     try:
