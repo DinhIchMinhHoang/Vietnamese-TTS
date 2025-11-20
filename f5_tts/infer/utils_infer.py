@@ -68,58 +68,89 @@ fix_duration = None
 
 def chunk_text(text, max_chars=135):
 
-    # print(text)
 
+    # Unicode NFC normalization and diacritic preservation
+    import unicodedata
+    text = unicodedata.normalize('NFC', text)
+    # Clean up problematic characters (e.g., quotes)
+    text = text.replace('“', '"').replace('”', '"').replace("‘", "'").replace("’", "'")
+    text = text.replace('...', '…')
+    # Remove isolated or unmatched quotes
+    text = re.sub(r'"{2,}', '"', text)
+    text = re.sub(r"'{2,}", "'", text)
 
-
-    # Bước 1: Tách câu bằng underthesea cho tiếng Việt
+    # Step 1: Split into sentences (prefer underthesea, fallback to regex)
     try:
         from underthesea import sent_tokenize
         sentences = sent_tokenize(text)
     except ImportError:
-        # Fallback: dùng regex nếu underthesea chưa cài đặt
-        import re
         sentence_endings = r'[\.\!\?…]+[\s\n]+'
         sentences = re.split(sentence_endings, text)
         sentences = [s.strip() for s in sentences if s.strip()]
 
-    # Ghép câu ngắn hơn 4 từ với câu liền kề
+    # Remove empty sentences and strip whitespace
+    sentences = [s.strip() for s in sentences if s.strip()]
+
+    # Merge very short sentences with neighbors (less than 4 words)
     i = 0
     while i < len(sentences):
         if len(sentences[i].split()) < 4:
             if i == 0 and i + 1 < len(sentences):
                 sentences[i + 1] = sentences[i] + ', ' + sentences[i + 1]
                 del sentences[i]
+            elif i - 1 >= 0:
+                sentences[i - 1] = sentences[i - 1] + ', ' + sentences[i]
+                del sentences[i]
+                i -= 1
             else:
-                if i - 1 >= 0:
-                    sentences[i - 1] = sentences[i - 1] + ', ' + sentences[i]
-                    del sentences[i]
-                    i -= 1
+                i += 1
         else:
             i += 1
 
-    # Bước 2: Tách phần quá dài trong câu theo dấu ", "
-    import re
-    final_sentences = []
-    for sentence in sentences:
-        parts = [p.strip() for p in re.split(r',|;', sentence)]
-        buffer = []
-        for part in parts:
-            buffer.append(part)
-            total_words = sum(len(p.split()) for p in buffer)
-            if total_words > 20:
-                long_part = ', '.join(buffer)
-                final_sentences.append(long_part)
-                buffer = []
-        if buffer:
-            final_sentences.append(', '.join(buffer))
-
-    # Ghép phần cuối quá ngắn
-    if len(final_sentences) >= 2 and len(final_sentences[-1].split()) < 4:
-        final_sentences[-2] = final_sentences[-2] + ', ' + final_sentences[-1]
-        final_sentences = final_sentences[:-1]
-
-    return final_sentences
+    # Step 2: Merge very short sentences/phrases with neighbors for more context
+    min_words = 5  # Minimum words per chunk
+    chunks = []
+    buffer = ''
+    for idx, sentence in enumerate(sentences):
+        s = sentence.strip()
+        # If the sentence is very long, split by comma/semicolon (but keep phrases natural)
+        if len(s.split()) > 30:
+            parts = re.split(r'([,;])', s)
+            sub_buffer = ''
+            for part in parts:
+                if part in [',', ';']:
+                    sub_buffer += part
+                    continue
+                if not sub_buffer:
+                    sub_buffer = part.strip()
+                else:
+                    sub_buffer += ' ' + part.strip()
+                if len(sub_buffer.split()) > 20:
+                    chunk_text = sub_buffer.strip()
+                    if len(chunk_text.split()) < min_words and chunks:
+                        # Merge with previous chunk
+                        chunks[-1] += ' ' + chunk_text
+                    else:
+                        chunks.append(chunk_text)
+                    sub_buffer = ''
+            if sub_buffer.strip():
+                chunk_text = sub_buffer.strip()
+                if len(chunk_text.split()) < min_words and chunks:
+                    chunks[-1] += ' ' + chunk_text
+                else:
+                    chunks.append(chunk_text)
+        else:
+            if s:
+                buffer = buffer + ' ' + s if buffer else s
+                if len(buffer.split()) >= min_words:
+                    chunks.append(buffer.strip())
+                    buffer = ''
+    if buffer:
+        # Add pause if very short
+        if len(buffer.split()) < min_words:
+            buffer = buffer.strip() + ','
+        chunks.append(buffer.strip())
+    return chunks
 
 
 # load vocoder
@@ -415,8 +446,8 @@ def infer_process(
     audio, sr = torchaudio.load(ref_audio)
     max_chars = int(len(ref_text.encode("utf-8")) / (audio.shape[-1] / sr) * (25 - audio.shape[-1] / sr))
     gen_text_batches = chunk_text(gen_text, max_chars=max_chars)
-    for i, gen_text in enumerate(gen_text_batches):
-        print(f"gen_text {i}", gen_text)
+    for i, chunk in enumerate(gen_text_batches):
+        print(f"gen_text {i}", chunk)
     print("\n")
 
     show_info(f"Generating audio in {len(gen_text_batches)} batches...")
@@ -476,9 +507,15 @@ def infer_batch_process(
 
     if len(ref_text[-1].encode("utf-8")) == 1:
         ref_text = ref_text + " "
-    for i, gen_text in enumerate(progress.tqdm(gen_text_batches)):
+    for i, chunk in enumerate(progress.tqdm(gen_text_batches)):
+        # Reinforce NFC normalization for each chunk
+        import unicodedata
+        input_text = unicodedata.normalize('NFC', chunk)
+        # Add a brief pause for very short chunks
+        if len(input_text.split()) < 5:
+            input_text = input_text + ','
         # Prepare the text
-        text_list = [ref_text + gen_text]
+        text_list = [ref_text + input_text]
         final_text_list = convert_char_to_pinyin(text_list)
 
         ref_audio_len = audio.shape[-1] // hop_length
@@ -487,7 +524,7 @@ def infer_batch_process(
         else:
             # Calculate duration
             ref_text_len = len(ref_text.encode("utf-8"))
-            gen_text_len = len(gen_text.encode("utf-8"))
+            gen_text_len = len(input_text.encode("utf-8"))
             duration = ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / speed)
 
         # inference
@@ -517,7 +554,8 @@ def infer_batch_process(
             generated_waves.append(generated_wave)
             spectrograms.append(generated_mel_spec[0].cpu().numpy())
 
-    # Combine all generated waves with cross-fading
+    # Combine all generated waves with cross-fading, but skip cross-fade for very short segments
+    min_crossfade_samples = int(0.2 * target_sample_rate)  # 0.2s minimum for cross-fade
     if cross_fade_duration <= 0:
         # Simply concatenate
         final_wave = np.concatenate(generated_waves)
@@ -531,8 +569,8 @@ def infer_batch_process(
             cross_fade_samples = int(cross_fade_duration * target_sample_rate)
             cross_fade_samples = min(cross_fade_samples, len(prev_wave), len(next_wave))
 
-            if cross_fade_samples <= 0:
-                # No overlap possible, concatenate
+            # Skip cross-fade if either segment is too short
+            if cross_fade_samples <= min_crossfade_samples:
                 final_wave = np.concatenate([prev_wave, next_wave])
                 continue
 
