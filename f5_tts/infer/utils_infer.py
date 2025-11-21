@@ -517,13 +517,10 @@ def infer_batch_process(
     if len(ref_text[-1].encode("utf-8")) == 1:
         ref_text = ref_text + " "
     for i, chunk in enumerate(progress.tqdm(gen_text_batches)):
-        # Reinforce NFC normalization for each chunk
         import unicodedata
         input_text = unicodedata.normalize('NFC', chunk)
-        # Add a brief pause for very short chunks
         if len(input_text.split()) < 5:
             input_text = input_text + ','
-        # Prepare the text
         text_list = [ref_text + input_text]
         final_text_list = convert_char_to_pinyin(text_list)
 
@@ -531,37 +528,37 @@ def infer_batch_process(
         if fix_duration is not None:
             duration = int(fix_duration * target_sample_rate / hop_length)
         else:
-            # Calculate duration
             ref_text_len = len(ref_text.encode("utf-8"))
             gen_text_len = len(input_text.encode("utf-8"))
             duration = ref_audio_len + int(ref_audio_len / ref_text_len * gen_text_len / speed)
 
-        # inference
+        # Mixed precision inference
         with torch.inference_mode():
-            generated, _ = model_obj.sample(
-                cond=audio,
-                text=final_text_list,
-                duration=duration,
-                steps=nfe_step,
-                cfg_strength=cfg_strength,
-                sway_sampling_coef=sway_sampling_coef,
-            )
+            use_autocast = torch.cuda.is_available()
+            autocast_ctx = torch.cuda.amp.autocast() if use_autocast else torch.no_grad()
+            with autocast_ctx:
+                generated, _ = model_obj.sample(
+                    cond=audio,
+                    text=final_text_list,
+                    duration=duration,
+                    steps=nfe_step,
+                    cfg_strength=cfg_strength,
+                    sway_sampling_coef=sway_sampling_coef,
+                )
 
-            generated = generated.to(torch.float32)
-            generated = generated[:, ref_audio_len:, :]
-            generated_mel_spec = generated.permute(0, 2, 1)
-            if mel_spec_type == "vocos":
-                generated_wave = vocoder.decode(generated_mel_spec)
-            elif mel_spec_type == "bigvgan":
-                generated_wave = vocoder(generated_mel_spec)
-            if rms < target_rms:
-                generated_wave = generated_wave * rms / target_rms
+                generated = generated.to(torch.float32)
+                generated = generated[:, ref_audio_len:, :]
+                generated_mel_spec = generated.permute(0, 2, 1)
+                if mel_spec_type == "vocos":
+                    generated_wave = vocoder.decode(generated_mel_spec)
+                elif mel_spec_type == "bigvgan":
+                    generated_wave = vocoder(generated_mel_spec)
+                if rms < target_rms:
+                    generated_wave = generated_wave * rms / target_rms
 
-            # wav -> numpy
-            generated_wave = generated_wave.squeeze().cpu().numpy()
-
-            generated_waves.append(generated_wave)
-            spectrograms.append(generated_mel_spec[0].cpu().numpy())
+                generated_wave = generated_wave.squeeze().cpu().numpy()
+                generated_waves.append(generated_wave)
+                spectrograms.append(generated_mel_spec[0].cpu().numpy())
 
     # Combine all generated waves with cross-fading, but skip cross-fade for very short segments
     min_crossfade_samples = int(0.2 * target_sample_rate)  # 0.2s minimum for cross-fade
